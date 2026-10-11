@@ -1,0 +1,206 @@
+name: Build Dominator Kora APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Create Flutter Project Structure
+        run: |
+          flutter create . --org com.dominator.kora --project-name dominator_kora --platforms android
+
+      - name: Inject Custom Code and Pubspec
+        run: |
+          # استبدال ملف main.dart الافتراضي بالكود الخاص بنا
+          cat << 'EOF' > lib/main.dart
+          import 'package:flutter/material.dart';
+          import 'package:video_player/video_player.dart';
+          import 'package:chewie/chewie.dart';
+
+          void main() {
+            runApp(const DominatorKoraApp());
+          }
+
+          class DominatorKoraApp extends StatelessWidget {
+            const DominatorKoraApp({super.key});
+
+            @override
+            Widget build(BuildContext context) {
+              return MaterialApp(
+                title: 'Dominator Kora',
+                debugShowCheckedModeBanner: false,
+                theme: ThemeData.dark().copyWith(
+                  scaffoldBackgroundColor: const Color(0xFF0F172A),
+                  primaryColor: const Color(0xFF38BDF8),
+                ),
+                home: const HomeScreen(),
+              );
+            }
+          }
+
+          class HomeScreen extends StatefulWidget {
+            const HomeScreen({super.key});
+
+            @override
+            State<HomeScreen> createState() => _HomeScreenState();
+          }
+
+          class _HomeScreenState extends State<HomeScreen> {
+            final List<Map<String, String>> channels = [
+              {'name': 'beIN Sports 1 HD', 'url': 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'},
+              {'name': 'beIN Sports 2 HD', 'url': 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'},
+              {'name': 'beIN Sports 3 HD', 'url': 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'},
+              {'name': 'beIN Sports Premium 1', 'url': 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'},
+            ];
+
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(
+                appBar: AppBar(
+                  title: const Text('Dominator Kora - beIN Sports', style: TextStyle(fontWeight: FontWeight.bold)),
+                  backgroundColor: const Color(0xFF1E293B),
+                  centerTitle: true,
+                ),
+                body: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    const Text('قنوات البث المباشر', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 12),
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: channels.length,
+                      itemBuilder: (context, index) {
+                        final channel = channels[index];
+                        return Card(
+                          color: const Color(0xFF1E293B),
+                          margin: const EdgeInsets.only(bottom: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          child: ListTile(
+                            leading: const Icon(Icons.tv, color: Color(0xFF38BDF8)),
+                            title: Text(channel['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            trailing: const Icon(Icons.play_arrow, color: Colors.greenAccent),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => PlayerScreen(channelName: channel['name']!, streamUrl: channel['url']!),
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              );
+            }
+          }
+
+          class PlayerScreen extends StatefulWidget {
+            final String channelName;
+            final String streamUrl;
+            const PlayerScreen({super.key, required this.channelName, required this.streamUrl});
+
+            @override
+            State<PlayerScreen> createState() => _PlayerScreenState();
+          }
+
+          class _PlayerScreenState extends State<PlayerScreen> {
+            late VideoPlayerController _videoController;
+            ChewieController? _chewieController;
+
+            @override
+            void initState() {
+              super.initState();
+              _initPlayer();
+            }
+
+            Future<void> _initPlayer() async {
+              _videoController = VideoPlayerController.networkUrl(Uri.parse(widget.streamUrl));
+              await _videoController.initialize();
+              _chewieController = ChewieController(
+                videoPlayerController: _videoController,
+                autoPlay: true,
+                isLive: true,
+                aspectRatio: 16 / 9,
+              );
+              setState(() {});
+            }
+
+            @override
+            void dispose() {
+              _videoController.dispose();
+              _chewieController?.dispose();
+              super.dispose();
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              const Color(0xFF1E293B);
+              return Scaffold(
+                appBar: AppBar(title: Text(widget.channelName), backgroundColor: const Color(0xFF1E293B)),
+                body: Center(
+                  child: _chewieController != null && _chewieController!.videoPlayerController.value.isInitialized
+                      ? AspectRatio(aspectRatio: 16 / 9, child: Chewie(controller: _chewieController!))
+                      : const CircularProgressIndicator(),
+                ),
+              );
+            }
+          }
+          EOF
+
+          # تحديث ملف pubspec.yaml لإضافة حزم المشغل
+          cat << 'EOF' > pubspec.yaml
+          name: dominator_kora
+          description: "Dominator Kora live streaming app."
+          publish_to: "none"
+          version: 1.0.0+1
+
+          environment:
+            sdk: ">=3.0.0 <4.0.0"
+
+          dependencies:
+            flutter:
+              sdk: flutter
+            video_player: ^2.8.2
+            chewie: ^1.7.5
+
+          dev_dependencies:
+            flutter_test:
+              sdk: flutter
+            flutter_lints: ^3.0.0
+
+          flutter:
+            uses-material-design: true
+          EOF
+
+      - name: Get Dependencies
+        run: flutter pub get
+
+      - name: Build APK Release
+        run: flutter build apk --release
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dominator-kora-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
